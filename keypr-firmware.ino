@@ -42,7 +42,7 @@
 #define SERVO_PIN   8   // GPIO8 (J1 pin 11) - also has onboard RGB LED
 
 // Reed Switch (Lid Detection)
-#define REED_SWITCH 9   // GPIO9 (J1 pin 12) - also has boot button
+#define REED_SWITCH 1   // GPIO1 (J3 pin 3) - moved from GPIO9 to avoid boot strapping conflict
 
 // Unlock Button
 #define UNLOCK_BTN  2   // GPIO2 (J3 pin 4) - INPUT_PULLUP

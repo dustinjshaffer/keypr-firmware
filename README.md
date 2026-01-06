@@ -42,7 +42,7 @@ Servo:
   Signal → GPIO8 (J1 pin 11)
 
 Reed Switch:
-  Signal → GPIO9 (J1 pin 12)
+  Signal → GPIO1 (J3 pin 3)
 
 Unlock Button:
   Signal → GPIO2 (J3 pin 4)
@@ -117,7 +117,7 @@ Install via Library Manager:
 ## Installation
 
 1. Clone this repository
-2. Open `sketch_jan4b.ino` in Arduino IDE
+2. Open `keypr-firmware.ino` in Arduino IDE
 3. Install required libraries
 4. Select ESP32C3 Dev Module board
 5. Upload to device
