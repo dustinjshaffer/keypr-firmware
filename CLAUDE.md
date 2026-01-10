@@ -12,8 +12,13 @@ This is an Arduino project for ESP32-C3. Build using Arduino IDE or Arduino CLI:
 
 1. Open `keypr-firmware.ino` in Arduino IDE
 2. Select board: **ESP32C3 Dev Module**
-3. Settings: USB CDC On Boot: Enabled, Upload Speed: 921600
+3. Settings:
+   - USB CDC On Boot: Enabled
+   - Upload Speed: 921600
+   - **Partition Scheme: Minimal SPIFFS (1.9MB APP with OTA/190KB SPIFFS)**
 4. Compile and upload
+
+**IMPORTANT:** The firmware requires the `min_spiffs` partition scheme for OTA support. This provides two 1.9MB app partitions for A/B OTA updates. The default partition scheme will not fit the firmware with OTA capability.
 
 **Required Libraries** (install via Library Manager):
 - NimBLE-Arduino
@@ -74,14 +79,16 @@ Single-file firmware (`keypr-firmware.ino`, ~1850 lines) with logical sections:
 
 ### BLE Protocol
 
-Custom BLE service with 7 characteristics (UUIDs defined in SHARED_API_CONTRACT.md):
+Custom BLE service with 9 characteristics (UUIDs defined in SHARED_API_CONTRACT.md):
 - **Lock Command** (Write) - `LOCK:<minutes>`, `UNLOCK`, `STATUS`, `SYNC`, `CLEAR_TAMPER`
-- **Status** (Read/Notify) - JSON with state, timer, lid, battery, WiFi, tamper
+- **Status** (Read/Notify) - JSON with state, timer, lid, battery, tamper, OTA progress
 - **Display Text** (Write) - Keyholder message (max 64 chars)
 - **Device Info** (Read) - JSON with MAC, firmware version, serial
-- **WiFi Config** (Write) - `WIFI:<ssid>:<password>`
+- **OTA Control** (Write/Notify) - `OTA_START:<size>:<crc>`, `OTA_ABORT`, `OTA_VERIFY`, `OTA_APPLY`, `OTA_CONFIRM`
 - **Device Key** (Write) - `KEY:<base64-key>` for API authentication
-- **WiFi Networks** (Read) - Triggers WiFi scan, returns JSON with available networks
+- **OTA Data** (Write) - Raw firmware binary chunks (512 bytes each)
+- **Time Sync** (Write) - `TIME:<unix_timestamp>` for event timestamp accuracy
+- **Buffered Events** (Read/Write) - Retrieve/clear events that occurred while app disconnected
 
 ### Hardware Pins (ESP32-C3)
 
@@ -125,14 +132,19 @@ When reviewing `SHARED_API_CONTRACT.md`, if a specification or command doesn't a
 3. **Tag other instances** - Use format: `Firmware Claude: [issue description]` so Mobile App Claude and API Claude see the feedback
 
 Examples of firmware constraints to consider:
-- Flash/RAM limits (~3MB app space with huge_app partition, ~320KB RAM)
+- Flash/RAM limits (~1.9MB per app partition with min_spiffs, ~320KB RAM)
 - BLE MTU size (default ~23 bytes, can negotiate up to ~512)
 - JSON parsing overhead (ArduinoJson memory allocation)
-- WiFi vs BLE cannot run simultaneously at full power
+- OTA chunk size is 512 bytes per BLE write
 - E-ink refresh time (~2-3 seconds for full refresh)
+- OTA requires min_spiffs partition scheme for dual app partitions
 
 ## Incomplete Features
 
 Battery monitoring is stubbed (always returns 100%) - requires voltage divider circuit.
 
 API endpoints are documented in SHARED_API_CONTRACT.md but not yet implemented on the backend.
+
+## Pending Improvements
+
+- **Startup lid check:** On boot, check if lid is closed and engage servo to locked position. Currently the servo only engages when entering LOCKED state or when lock state is restored from NVS. If the device reboots in READY state with lid closed, servo should still engage to secure the lid.
