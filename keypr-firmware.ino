@@ -1020,7 +1020,7 @@ void setupDisplay() {
 
   // Initialize GxEPD2 - let it do its own reset too
   display.init(115200, true, 50, false);
-  display.setRotation(0);
+  display.setRotation(2);  // 180° rotation - pins at bottom
   display.setTextColor(GxEPD_BLACK);
   display.setFullWindow();
 
