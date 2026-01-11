@@ -1,10 +1,13 @@
 # Arduino build artifacts
 *.elf
-*.bin
 *.map
 *.hex
 build/
 .build/
+
+# Ignore .bin files except in bin/ folder (release binaries)
+*.bin
+!bin/*.bin
 
 # IDE settings
 .vscode/
