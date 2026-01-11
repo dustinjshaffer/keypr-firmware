@@ -821,6 +821,8 @@ void setupBLE() {
     NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::NOTIFY
   );
   pOTAControlChar->setCallbacks(new OTAControlCallback());
+  // Explicitly create CCCD descriptor (0x2902) for notifications
+  pOTAControlChar->createDescriptor("2902", NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::WRITE);
 
   // Device Key Characteristic (Write)
   pDeviceKeyChar = pService->createCharacteristic(
