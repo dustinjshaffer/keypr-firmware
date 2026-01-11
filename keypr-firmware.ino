@@ -240,6 +240,7 @@ unsigned long otaLastChunkTime = 0;  // When last chunk received
 char otaErrorCode[8] = "";           // Error code if OTA_ERROR
 char otaErrorMsg[64] = "";           // Error message if OTA_ERROR
 bool otaPendingValidation = false;   // True if new firmware needs OTA_CONFIRM
+int8_t otaLastDisplayedMilestone = -1;  // Last displayed % milestone (-1 = none)
 
 // Tamper detection
 bool tamperAlert = false;
@@ -396,6 +397,7 @@ void confirmOTA();
 void notifyOTAStatus(const char* status);
 uint32_t calculateCRC32(const uint8_t* data, size_t len);
 void drawOTAScreen();
+void updateOTAProgress();  // Partial refresh for OTA progress bar
 void checkOTAPendingValidation();
 
 // Storage functions
@@ -1322,30 +1324,22 @@ void drawOTAScreen() {
 
     // Fill bar based on progress
     int progress = 0;
+    int percent = 0;
     if (otaTotalSize > 0) {
       progress = (otaBytesReceived * (barW - 4)) / otaTotalSize;
+      percent = (otaBytesReceived * 100) / otaTotalSize;
     }
     display.fillRect(barX + 2, barY + 2, progress, barH - 4, GxEPD_BLACK);
 
-    // Percentage text
-    display.setFont(&FreeMonoBold9pt7b);
-    int percent = 0;
-    if (otaTotalSize > 0) {
-      percent = (otaBytesReceived * 100) / otaTotalSize;
+    // Only show percentage text at 50% and 99% to minimize refreshes
+    if (percent >= 50) {
+      display.setFont(&FreeMonoBold9pt7b);
+      char percentStr[8];
+      snprintf(percentStr, sizeof(percentStr), "%d%%", percent);
+      display.getTextBounds(percentStr, 0, 0, &x1, &y1, &w, &h);
+      display.setCursor((200 - w) / 2, barY + barH + 25);
+      display.print(percentStr);
     }
-    char percentStr[8];
-    snprintf(percentStr, sizeof(percentStr), "%d%%", percent);
-    display.getTextBounds(percentStr, 0, 0, &x1, &y1, &w, &h);
-    display.setCursor((200 - w) / 2, barY + barH + 25);
-    display.print(percentStr);
-
-    // Size text
-    display.setFont();
-    char sizeStr[32];
-    snprintf(sizeStr, sizeof(sizeStr), "%lu / %lu KB", otaBytesReceived / 1024, otaTotalSize / 1024);
-    int textW = strlen(sizeStr) * 6;
-    display.setCursor((200 - textW) / 2, barY + barH + 45);
-    display.print(sizeStr);
   }
 
   // Error message (if error state)
@@ -1374,6 +1368,68 @@ void drawOTAScreen() {
     display.setCursor((200 - textW) / 2, 180);
     display.print(warning);
   }
+}
+
+// OTA Progress: Partial refresh for progress bar only (faster updates)
+void updateOTAProgress() {
+  if (otaState != OTA_RECEIVING) {
+    // Use full refresh for other states
+    updateDisplay();
+    return;
+  }
+
+  // Progress bar dimensions (must match drawOTAScreen)
+  int barX = 20;
+  int barY = 80;
+  int barW = 160;
+  int barH = 20;
+
+  // Calculate current progress
+  int progress = 0;
+  int percent = 0;
+  if (otaTotalSize > 0) {
+    progress = (otaBytesReceived * (barW - 4)) / otaTotalSize;
+    percent = (otaBytesReceived * 100) / otaTotalSize;
+  }
+
+  // Determine if we need to show text (at 50% or 99%)
+  bool showText = (percent >= 50);
+
+  // Calculate partial window - include text area if showing text
+  int windowY = barY;
+  int windowH = barH;
+  if (showText) {
+    windowH = barH + 30;  // Include space for percentage text
+  }
+
+  // Use partial refresh for speed
+  display.setPartialWindow(barX - 2, windowY - 2, barW + 4, windowH + 4);
+  display.firstPage();
+  do {
+    display.fillScreen(GxEPD_WHITE);
+
+    // Bar outline
+    display.drawRect(barX, barY, barW, barH, GxEPD_BLACK);
+
+    // Fill bar
+    display.fillRect(barX + 2, barY + 2, progress, barH - 4, GxEPD_BLACK);
+
+    // Percentage text (only at 50%+)
+    if (showText) {
+      display.setFont(&FreeMonoBold9pt7b);
+      char percentStr[8];
+      snprintf(percentStr, sizeof(percentStr), "%d%%", percent);
+      int16_t x1, y1;
+      uint16_t w, h;
+      display.getTextBounds(percentStr, 0, 0, &x1, &y1, &w, &h);
+      display.setCursor((200 - w) / 2, barY + barH + 25);
+      display.print(percentStr);
+    }
+  } while (display.nextPage());
+
+  Serial.print("OTA display: ");
+  Serial.print(percent);
+  Serial.println("%");
 }
 
 // ============================================
@@ -2311,6 +2367,7 @@ void startOTA(uint32_t size, uint32_t crc, uint32_t resumeOffset) {
   otaCalculatedCRC = 0xFFFFFFFF;  // CRC32 initial value
   otaStartTime = millis();
   otaLastChunkTime = millis();
+  otaLastDisplayedMilestone = -1;  // Reset display milestone tracker
   otaErrorCode[0] = '\0';
   otaErrorMsg[0] = '\0';
 
@@ -2380,12 +2437,35 @@ void processOTAChunk(const uint8_t* data, size_t len) {
   snprintf(ackMsg, sizeof(ackMsg), "OTA_ACK:%lu", expectedChunk);
   notifyOTAStatus(ackMsg);
 
-  // Send progress periodically (every 10 chunks)
+  // Send BLE progress periodically (every 10 chunks)
   if (expectedChunk % 10 == 0 || otaBytesReceived >= otaTotalSize) {
     char progressMsg[32];
     snprintf(progressMsg, sizeof(progressMsg), "OTA_PROGRESS:%lu", otaBytesReceived);
     notifyOTAStatus(progressMsg);
-    updateDisplay();  // Update progress bar
+  }
+
+  // Update display only at percentage milestones to avoid slowing transfer
+  // Milestones: 0%, 10%, 20%, 30%, 40%, 50%, 60%, 70%, 80%, 90%, 95%, 99%
+  if (otaTotalSize > 0) {
+    int percent = (otaBytesReceived * 100) / otaTotalSize;
+    int8_t milestone = -1;
+    if (percent >= 99) milestone = 99;
+    else if (percent >= 95) milestone = 95;
+    else if (percent >= 90) milestone = 90;
+    else if (percent >= 80) milestone = 80;
+    else if (percent >= 70) milestone = 70;
+    else if (percent >= 60) milestone = 60;
+    else if (percent >= 50) milestone = 50;
+    else if (percent >= 40) milestone = 40;
+    else if (percent >= 30) milestone = 30;
+    else if (percent >= 20) milestone = 20;
+    else if (percent >= 10) milestone = 10;
+    else if (percent >= 0) milestone = 0;
+
+    if (milestone > otaLastDisplayedMilestone) {
+      otaLastDisplayedMilestone = milestone;
+      updateOTAProgress();  // Partial refresh for progress bar
+    }
   }
 
   Serial.print("OTA: Chunk ");
