@@ -148,3 +148,22 @@ API endpoints are documented in SHARED_API_CONTRACT.md but not yet implemented o
 ## Pending Improvements
 
 - **Startup lid check:** On boot, check if lid is closed and engage servo to locked position. Currently the servo only engages when entering LOCKED state or when lock state is restored from NVS. If the device reboots in READY state with lid closed, servo should still engage to secure the lid.
+
+- **Battery power setup:** Hardware and firmware changes needed for battery operation:
+
+  **Hardware wiring (components: 3.7V LiPo, TP4056 charger, MT3608 boost converter):**
+  ```
+  LiPo Battery ──► TP4056 (B+/B-) ──► MT3608 (VIN+/VIN-) ──► ESP32-C3 (5V/GND)
+  ```
+  - TP4056 OUT+ → MT3608 VIN+
+  - TP4056 OUT- → MT3608 VIN- (GND)
+  - MT3608 VOUT+ → ESP32-C3 5V pin
+  - MT3608 VOUT- → ESP32-C3 GND pin
+  - **IMPORTANT:** Adjust MT3608 potentiometer to output exactly 5.0V before connecting to ESP32
+
+  **Firmware changes needed for battery monitoring:**
+  - Add voltage divider circuit: Battery+ → 100kΩ → ADC pin → 100kΩ → GND
+  - Use GPIO0 or GPIO1 for ADC input (check available pins)
+  - Implement `readBatteryVoltage()` using `analogRead()`
+  - Convert ADC reading to percentage (4.2V=100%, 3.0V=0%)
+  - Update `batteryPercent` variable (currently hardcoded to 100)
